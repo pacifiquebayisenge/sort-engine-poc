@@ -1,14 +1,19 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-  compatibilityDate: "2025-07-15",
-  devtools: { enabled: true },
+	compatibilityDate: '2025-07-15',
+	devtools: { enabled: true },
 
-  modules: [
-    "@nuxt/eslint",
-    "@nuxt/ui",
-    "@nuxtjs/i18n",
-    "@pinia/nuxt",
-  ],
+	runtimeConfig: {
+		huggingFaceApiKey: process.env.HUGGINGFACE_API_KEY,
+	},
 
-  css: ['assets/css/main.css'],
-});
+	modules: ['@nuxt/eslint', '@nuxt/ui', '@nuxtjs/i18n', '@pinia/nuxt'],
+
+	css: ['assets/css/main.css'],
+
+	vite: {
+		optimizeDeps: {
+			include: ['@zxing/browser'],
+		},
+	},
+})

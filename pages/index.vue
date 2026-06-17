@@ -105,6 +105,14 @@
 				@identified="handleIdentifiedItem"
 				@submit="handleFallbackSubmit"
 			/>
+
+			<p v-if="aiErrorMessage" class="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-700">
+				{{ aiErrorMessage }}
+			</p>
+
+			<p v-if="isAnalyzing" class="mt-4 rounded-xl bg-green-50 p-4 text-sm text-green-700">
+				Analyzing item...
+			</p>
 		</section>
 	</main>
 </template>
@@ -125,6 +133,9 @@ const results = ref<SearchResult[]>([])
 const isLoading = ref(false)
 const errorMessage = ref('')
 const showDecisionTreeManually = ref(false)
+
+const aiErrorMessage = ref('')
+const isAnalyzing = ref(false)
 
 let debounceTimeout: ReturnType<typeof setTimeout> | null = null
 
@@ -198,14 +209,45 @@ function handleIdentifiedItem(item: SearchResult) {
 	showDecisionTreeManually.value = false
 }
 
-function handleFallbackSubmit(payload: unknown) {
-	console.log('Fallback submitted:', payload)
+async function handleFallbackSubmit(payload: {
+	originalQuery: string
+	extraDescription: string
+	barcode: string
+	uploadedImage: File | null
+}) {
+	try {
+		aiErrorMessage.value = ''
+		isAnalyzing.value = true
 
-	// Later:
-	// 1. Try barcode lookup
-	// 2. Try search again using extra description
-	// 3. Send image to recognition service
-	// 4. Create Sorting Doubt request
+		const aiResult = await $fetch<{
+			title: string
+			fraction: string
+			confidence: number
+			reason: string
+		}>('/api/ai-classify', {
+			method: 'POST',
+			body: {
+				originalQuery: payload.originalQuery,
+				extraDescription: payload.extraDescription,
+			},
+		})
+
+		results.value = [
+			{
+				id: `ai-${Date.now()}`,
+				title: aiResult.title,
+				fraction: aiResult.fraction,
+				score: 0,
+				matchPercentage: aiResult.confidence,
+			},
+		]
+
+		showDecisionTreeManually.value = false
+	} catch {
+		aiErrorMessage.value = 'AI classification is currently unavailable. Please try again later.'
+	} finally {
+		isAnalyzing.value = false
+	}
 }
 
 function getMatchBadgeClass(matchPercentage: number) {
