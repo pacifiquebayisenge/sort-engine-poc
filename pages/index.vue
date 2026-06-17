@@ -102,6 +102,7 @@
 			<DecisionTree
 				v-if="shouldShowDecisionTree"
 				:original-query="query"
+				@identified="handleIdentifiedItem"
 				@submit="handleFallbackSubmit"
 			/>
 		</section>
@@ -190,6 +191,11 @@ async function searchItems(value: string) {
 	} finally {
 		isLoading.value = false
 	}
+}
+
+function handleIdentifiedItem(item: SearchResult) {
+	results.value = [item]
+	showDecisionTreeManually.value = false
 }
 
 function handleFallbackSubmit(payload: unknown) {

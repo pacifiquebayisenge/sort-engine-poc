@@ -77,7 +77,37 @@
 			<div class="mt-4 space-y-4">
 				<input v-model="extraDescription" class="input" placeholder="Describe the item..." />
 
-				<input v-model="barcode" class="input" placeholder="Scan or enter a barcode" />
+				<div class="space-y-3">
+					<div class="flex gap-2">
+						<div class="flex gap-2">
+							<input
+								v-model="barcode"
+								class="flex-1 rounded-xl border border-slate-300 px-4 py-3"
+								placeholder="Scan or enter a barcode"
+								@keyup.enter="lookupBarcode()"
+							/>
+
+							<button
+								class="rounded-xl bg-green-700 px-5 py-3 font-semibold text-white"
+								@click="lookupBarcode()"
+							>
+								Search
+							</button>
+						</div>
+
+						<button
+							type="button"
+							class="rounded-xl border border-green-700 px-4 py-3 font-semibold text-green-700 transition hover:bg-green-50"
+							@click="showScanner = !showScanner"
+						>
+							{{ showScanner ? 'Close' : 'Scan' }}
+						</button>
+					</div>
+
+					<ClientOnly>
+						<BarcodeScanner v-if="showScanner" @detected="handleBarcodeDetected" />
+					</ClientOnly>
+				</div>
 
 				<input type="file" accept="image/*" class="input text-sm" @change="handleFileUpload" />
 			</div>
@@ -109,8 +139,19 @@ For now, we will hardcode the questions and answers.
 */
 
 const emit = defineEmits<{
+	identified: [
+		item: {
+			id: string
+			title: string
+			fraction: string
+			score: number
+			matchPercentage: number
+			source?: string
+			brand?: string
+		},
+	]
 	submit: [
-		{
+		payload: {
 			originalQuery: string
 			answers: {
 				isPackaging: string
@@ -138,6 +179,10 @@ const result = ref('')
 const extraDescription = ref('')
 const barcode = ref('')
 const uploadedImage = ref<File | null>(null)
+const showScanner = ref(false)
+
+const barcodeError = ref('')
+const isLookingUpBarcode = ref(false)
 
 const shouldAskForMoreInfo = computed(() => {
 	return answers.isPackaging === 'unknown' || answers.material === 'unknown'
@@ -188,6 +233,61 @@ function handleFileUpload(event: Event) {
 	uploadedImage.value = input.files?.[0] ?? null
 }
 
+async function lookupBarcode(code = barcode.value) {
+	const cleanCode = code.trim()
+
+	if (!cleanCode) {
+		barcodeError.value = 'Please enter a barcode.'
+		return
+	}
+
+	try {
+		barcodeError.value = ''
+		isLookingUpBarcode.value = true
+
+		const barcodeResult = await $fetch<{
+			found: boolean
+			item: {
+				id: string
+				title: string
+				fraction: string
+				matchPercentage: number
+				source?: string
+				brand?: string
+			} | null
+		}>('/api/barcode', {
+			query: {
+				barcode: cleanCode,
+			},
+		})
+
+		if (barcodeResult.found && barcodeResult.item) {
+			emit('identified', {
+				...barcodeResult.item,
+				score: 0,
+			})
+
+			return
+		}
+
+		barcodeError.value = 'No product found for this barcode.'
+	} catch {
+		barcodeError.value =
+			'Could not reach the product database. Try again later or use guided identification.'
+	} finally {
+		isLookingUpBarcode.value = false
+	}
+}
+
+async function handleBarcodeDetected(code: string) {
+	console.log('BARCODE DETECTED:', code)
+
+	barcode.value = code
+	showScanner.value = false
+
+	await lookupBarcode(code)
+}
+
 function submitFallback() {
 	emit('submit', {
 		originalQuery: props.originalQuery,
@@ -206,6 +306,7 @@ function resetTree() {
 	extraDescription.value = ''
 	barcode.value = ''
 	uploadedImage.value = null
+	showScanner.value = false
 }
 </script>
 
