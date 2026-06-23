@@ -9,31 +9,45 @@
 					class="rounded-xl bg-green-700 px-5 py-3 font-semibold text-white transition hover:bg-green-800"
 					@click="startScan"
 				>
-					Start camera
+					Camera starten
 				</button>
 			</div>
 
+			<!-- Scan frame overlay -->
 			<div
 				v-if="isScanning"
 				class="pointer-events-none absolute inset-10 rounded-lg border-[3px] border-green-400/70"
 			/>
+
+			<!-- Corner decorations -->
+			<template v-if="isScanning">
+				<div
+					class="pointer-events-none absolute left-10 top-10 h-6 w-6 rounded-tl-md border-l-4 border-t-4 border-green-400"
+				/>
+				<div
+					class="pointer-events-none absolute right-10 top-10 h-6 w-6 rounded-tr-md border-r-4 border-t-4 border-green-400"
+				/>
+				<div
+					class="pointer-events-none absolute bottom-10 left-10 h-6 w-6 rounded-bl-md border-b-4 border-l-4 border-green-400"
+				/>
+				<div
+					class="pointer-events-none absolute bottom-10 right-10 h-6 w-6 rounded-br-md border-b-4 border-r-4 border-green-400"
+				/>
+			</template>
 		</div>
 
 		<div v-if="isScanning" class="flex items-center justify-between">
-			<p class="text-sm text-slate-500">Point the camera at the barcode...</p>
-
+			<p class="text-sm text-slate-500">Richt de camera op de barcode...</p>
 			<button
 				type="button"
 				class="text-sm font-semibold text-slate-500 hover:text-slate-800"
 				@click="stopScan"
 			>
-				Cancel
+				Annuleren
 			</button>
 		</div>
 
-		<p v-if="errorMessage" class="text-sm text-red-600">
-			{{ errorMessage }}
-		</p>
+		<p v-if="errorMessage" class="text-sm text-red-600">{{ errorMessage }}</p>
 	</div>
 </template>
 
@@ -52,19 +66,13 @@ let controls: IScannerControls | null = null
 
 async function startScan() {
 	if (!videoRef.value) return
-
 	errorMessage.value = ''
 
 	try {
-		// Loaded dynamically so the decoder (and its format tables) is only
-		// pulled into the bundle once someone actually opens the scanner,
-		// instead of adding weight to every page load.
+		// Dynamically imported so the decoder is only bundled when the scanner opens
 		const { BrowserMultiFormatReader } = await import('@zxing/browser')
 		const reader = new BrowserMultiFormatReader()
 
-		// decodeFromConstraints returns a controls object — that's what we
-		// use to stop scanning later. The reader instance itself has no
-		// stop/reset method in the current @zxing/browser API.
 		controls = await reader.decodeFromConstraints(
 			{ video: { facingMode: 'environment' } },
 			videoRef.value,
@@ -73,16 +81,14 @@ async function startScan() {
 					emit('detected', result.getText())
 					stopScan()
 				}
-
-				// The callback also fires with a NotFoundException on every
-				// frame where no barcode is visible yet — that's expected,
-				// not an error, so we don't surface it.
+				// NotFoundException fires every frame without a barcode — expected, not an error
 			}
 		)
 
 		isScanning.value = true
 	} catch {
-		errorMessage.value = 'Could not access the camera. Check permissions and try again.'
+		errorMessage.value =
+			'Camera kon niet geactiveerd worden. Controleer je toestemming en probeer opnieuw.'
 		isScanning.value = false
 	}
 }

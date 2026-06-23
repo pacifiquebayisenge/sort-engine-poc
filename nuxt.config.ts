@@ -1,10 +1,19 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-	compatibilityDate: '2025-07-15',
 	devtools: { enabled: true },
 
+	compatibilityDate: '2026-06-23',
+
+	i18n: {
+		defaultLocale: 'nl',
+		strategy: 'no_prefix',
+		locales: [{ code: 'nl', name: 'Nederlands' }],
+	},
+
+	ssr: false,
+
 	runtimeConfig: {
-		huggingFaceApiKey: process.env.HUGGINGFACE_API_KEY,
+		openRouterApiKey: process.env.OPENROUTER_API_KEY,
 	},
 
 	modules: ['@nuxt/eslint', '@nuxt/ui', '@nuxtjs/i18n', '@pinia/nuxt'],

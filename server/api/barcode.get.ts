@@ -1,3 +1,18 @@
+/**
+ * GET /api/barcode?barcode=<code>
+ *
+ * Looks up a product barcode via the Open Food Facts API and maps
+ * its packaging materials to a Belgian sorting fraction.
+ *
+ * Confidence levels:
+ *   90% — packaging material confidently identified (source: 'barcode')
+ *   40% — product found but material unclear (source: 'barcode-uncertain')
+ *        → UI should route these back to the decision tree
+ *
+ * Material mapping is heuristic and crowd-sourced data in OFF is incomplete,
+ * so uncertain results are explicitly flagged rather than guessed wrong.
+ */
+
 type OffPackaging = {
 	material?: string
 	shape?: string
@@ -6,6 +21,8 @@ type OffPackaging = {
 
 type OffProduct = {
 	product_name?: string
+	product_name_nl?: string
+	product_name_fr?: string
 	product_name_en?: string
 	brands?: string
 	packagings?: OffPackaging[]
@@ -26,92 +43,66 @@ type BarcodeResultItem = {
 	brand?: string
 }
 
-/**
- * Best-effort mapping from Open Food Facts packaging material/shape tags
- * to the Fost Plus sorting fractions used in sortingItems.ts.
- *
- * This is a heuristic fallback for products that aren't in our curated
- * sortingItems list. Open Food Facts packaging data is crowd-sourced and
- * not always complete, so this should be refined as edge cases come up
- * (composite packaging, drink cartons, multi-material trays, ...).
- *
- * Returns null when we can't confidently determine a fraction.
- */
 function mapMaterialsToFraction(materials: string[], shapes: string[]): string | null {
-	const joinedMaterials = materials.join(' ')
-	const joinedShapes = shapes.join(' ')
+	const m = materials.join(' ')
+	const s = shapes.join(' ')
 
-	// Drink cartons / Tetra Pak style packaging go in PMD in Belgium,
-	// regardless of their paper content, so check shape first.
-	if (/brick|carton/.test(joinedShapes)) {
-		return 'PMD'
-	}
+	// Drink cartons (Tetra Pak) are PMD in Belgium regardless of paper content
+	if (/brick|carton|tetra/.test(s)) return 'PMD'
 
-	if (/aluminium|steel|metal|tin/.test(joinedMaterials)) {
-		return 'PMD'
-	}
-
-	if (/plastic|pet|hdpe|ldpe|^pp$| pp |polystyrene|polypropylene/.test(joinedMaterials)) {
-		return 'PMD'
-	}
-
-	if (/glass/.test(joinedMaterials)) {
-		return 'Glasbol'
-	}
-
-	if (/paper|cardboard|fiber/.test(joinedMaterials)) {
-		return 'Papier-karton'
-	}
-
-	if (/wood/.test(joinedMaterials)) {
-		return 'Recyclagepark - hout'
-	}
+	if (/aluminium|steel|metal|tin/.test(m)) return 'PMD'
+	if (/plastic|pet|hdpe|ldpe|\bpp\b|polystyrene|polypropylene|pvc/.test(m)) return 'PMD'
+	if (/glass/.test(m)) return 'Glasbol'
+	if (/paper|cardboard|fiber|kraft/.test(m)) return 'Papier-karton'
+	if (/wood/.test(m)) return 'Recyclagepark - hout'
 
 	return null
+}
+
+function getBestProductName(product: OffProduct): string {
+	return (
+		product.product_name_nl ||
+		product.product_name ||
+		product.product_name_fr ||
+		product.product_name_en ||
+		'Onbekend product'
+	)
 }
 
 export default defineEventHandler(async (event) => {
 	const barcode = getQuery(event).barcode?.toString().trim()
 
 	if (!barcode) {
-		throw createError({
-			statusCode: 400,
-			statusMessage: 'Barcode is required',
-		})
+		throw createError({ statusCode: 400, statusMessage: 'Barcode is required' })
 	}
 
 	let offData: OffResponse
 
 	try {
 		offData = await $fetch<OffResponse>(
-			`https://world.openfoodfacts.org/api/v2/product/${barcode}.json`
+			`https://world.openfoodfacts.org/api/v2/product/${barcode}.json`,
+			{
+				headers: { 'User-Agent': 'SortEnginePoC/1.0 (github.com/poc)' },
+			}
 		)
 	} catch {
-		throw createError({
-			statusCode: 502,
-			statusMessage: 'Could not reach the product database',
-		})
+		throw createError({ statusCode: 502, statusMessage: 'Could not reach Open Food Facts' })
 	}
 
 	if (offData.status !== 1 || !offData.product) {
-		return {
-			found: false,
-			item: null,
-		}
+		return { found: false, item: null }
 	}
 
 	const product = offData.product
 
 	const materials = (product.packagings ?? [])
-		.map((packaging) => packaging.material ?? '')
+		.map((p) => p.material ?? '')
 		.concat(product.packaging_materials_tags ?? [])
-		.map((material) => material.toLowerCase())
+		.map((m) => m.toLowerCase())
 
-	const shapes = (product.packagings ?? []).map((packaging) =>
-		(packaging.shape ?? '').toLowerCase()
-	)
+	const shapes = (product.packagings ?? []).map((p) => (p.shape ?? '').toLowerCase())
 
-	const title = product.product_name || product.product_name_en || 'Unknown product'
+	const title = getBestProductName(product)
 	const fraction = mapMaterialsToFraction(materials, shapes)
 
 	const item: BarcodeResultItem = fraction
@@ -124,10 +115,6 @@ export default defineEventHandler(async (event) => {
 				brand: product.brands,
 			}
 		: {
-				// We found the product but couldn't confidently determine the
-				// packaging material, so we flag it as uncertain rather than
-				// guessing wrong. The UI can route this back into the
-				// decision tree instead of presenting it as a confident match.
 				id: `barcode-${barcode}`,
 				title,
 				fraction: 'Recyclagepark',
@@ -136,8 +123,5 @@ export default defineEventHandler(async (event) => {
 				brand: product.brands,
 			}
 
-	return {
-		found: true,
-		item,
-	}
+	return { found: true, item }
 })
