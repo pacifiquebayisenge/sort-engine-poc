@@ -35,7 +35,7 @@ Gebruiker zoekt
        ↓
 Elk resultaat wordt gelogd
        ↓
-Admin dashboard (toekomstige uitbreiding)
+Admin dashboard (analytics + escalatie-queue)
 ```
 
 Elke laag wordt alleen geactiveerd als de vorige laag geen bevredigend resultaat oplevert (< 60% match).
@@ -81,7 +81,24 @@ Elke laag wordt alleen geactiveerd als de vorige laag geen bevredigend resultaat
 
 - Elk zoekevent gelogd: query, laag, resultaat, confidence, postcode
 - Feedback (👍/👎) per resultaat gelogd
+- Escalaties (onopgeloste vragen) gelogd met bericht en postcode
 - In-memory voor PoC, klaar voor Supabase-integratie
+
+### Admin dashboard (`/pages/admin/index.vue`)
+
+Bereikbaar via `/admin`. Visualiseert de gelogde events en sluit de feedbackloop:
+
+- **Zoekvolume per dag** — staafgrafiek over de laatste 7 dagen
+- **Gebruik per laag** — hoe vaak elke laag (fuzzy / boom / barcode / AI / contact) wordt aangesproken
+- **Meest gezochte queries** — top 10, om database-verrijking te prioriteren
+- **No-result rate** — percentage zoekopdrachten zonder resultaat
+- **Feedback verdeling** — 👍/👎 totalen plus de items met de meeste negatieve feedback
+- **Onopgeloste items queue** — escalaties uit het contactformulier, met een actie om een vraag op te lossen (fractie + notitie toekennen)
+
+Ondersteund door twee server routes:
+
+- `/server/api/admin/stats.get.ts` — aggregeert alle statistieken uit de event-log
+- `/server/api/admin/resolve.post.ts` — markeert een escalatie als opgelost en bewaart de toegekende fractie
 
 ### Data (`/data/sortingItems.ts`)
 
@@ -125,7 +142,7 @@ Key aanmaken op: [openrouter.ai/keys](https://openrouter.ai/keys) — geen credi
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+Open [http://localhost:3000](http://localhost:3000) voor de zoekpagina, en [http://localhost:3000/admin](http://localhost:3000/admin) voor het admin dashboard.
 
 ---
 
@@ -150,19 +167,24 @@ sort-engine-poc/
 ├── assets/css/
 │   └── main.css
 ├── components/
-│   ├── BarcodeScanner.vue     # Camera barcode scanner
-│   └── DecisionTree.vue       # Geleide identificatie (3 stappen)
+│   ├── BarcodeScanner.vue       # Camera barcode scanner
+│   └── DecisionTree.vue         # Geleide identificatie (3 stappen)
 ├── data/
-│   └── sortingItems.ts        # Verrijkte dataset (~70 items)
+│   └── sortingItems.ts          # Verrijkte dataset (~70 items)
 ├── layouts/
 │   └── default.vue
 ├── pages/
-│   └── index.vue              # Hoofdpagina (search + results + feedback)
+│   ├── index.vue                # Hoofdpagina (search + results + feedback)
+│   └── admin/
+│       └── index.vue            # Admin dashboard (analytics + escalatie-queue)
 ├── server/api/
-│   ├── ai-classify.post.ts    # AI-classificatie via OpenRouter
-│   ├── barcode.get.ts         # Barcode lookup via Open Food Facts
-│   ├── log.post.ts            # Event logging
-│   └── search.get.ts          # Fuzzy search via Fuse.js
+│   ├── admin/
+│   │   ├── resolve.post.ts      # Markeer escalatie als opgelost
+│   │   └── stats.get.ts         # Dashboard-statistieken uit de event-log
+│   ├── ai-classify.post.ts      # AI-classificatie via OpenRouter
+│   ├── barcode.get.ts           # Barcode lookup via Open Food Facts
+│   ├── log.post.ts              # Event logging (search / feedback / escalatie)
+│   └── search.get.ts            # Fuzzy search via Fuse.js
 ├── .env.example
 ├── nuxt.config.ts
 └── package.json
@@ -207,21 +229,21 @@ Keyword-verrijking van alle ~300 items in de live database is de snelste en goed
 
 - **Postcode/IC-regels niet geïmplementeerd** — de app accepteert een postcode maar IC-specifieke overrides (bv. pizzadoos → GFT in sommige gemeenten) zijn nog niet gebouwd
 - **Statische dataset** — de Fuse.js search loopt over de lokale `sortingItems.ts`, niet over de live Fost Plus API
-- **Logging is in-memory** — events verdwijnen bij server restart; productie vereist een database (bv. Supabase)
-- **Admin dashboard niet gebouwd** — de logging-infrastructuur is aanwezig maar de visualisatie nog niet
-- **Geen meertaligheid** — `@nuxtjs/i18n` is aanwezig in `package.json` maar niet geconfigureerd
+- **Logging is in-memory** — events (en dus ook de admin-statistieken en escalatie-queue) verdwijnen bij server restart; productie vereist een database (bv. Supabase)
+- **Admin dashboard zonder authenticatie** — `/admin` is publiek bereikbaar en leest uit de in-memory log; in productie is auth + persistente opslag nodig
+- **Geen meertaligheid** — `@nuxtjs/i18n` is aanwezig en geconfigureerd met een standaardlocale, maar er zijn nog geen vertaalbestanden (NL/FR/EN/DE)
 
 ---
 
 ## Volgende stappen
 
-| Fase  | Beschrijving                                          | Inspanning |
-| ----- | ----------------------------------------------------- | ---------- |
-| **1** | Database-verrijking — 300 items, ~14 keywords/item    | ~1 week    |
-| **2** | Live Fost Plus API integratie + server-side caching   | ~1 dag     |
-| **3** | IC-regeloverrides per postcode                        | ~3-4 dagen |
-| **4** | Admin dashboard (analytics + onopgeloste items queue) | ~5-8 dagen |
-| **5** | Meertaligheid NL/FR/EN/DE                             | ~3-4 dagen |
+| Fase  | Beschrijving                                               | Inspanning |
+| ----- | ---------------------------------------------------------- | ---------- |
+| **1** | Database-verrijking — 300 items, ~14 keywords/item         | ~1 week    |
+| **2** | Live Fost Plus API integratie + server-side caching        | ~1 dag     |
+| **3** | IC-regeloverrides per postcode                             | ~3-4 dagen |
+| **4** | Admin: authenticatie + persistente opslag/queue (Supabase) | ~2-3 dagen |
+| **5** | Meertaligheid NL/FR/EN/DE                                  | ~3-4 dagen |
 
 ---
 
@@ -236,11 +258,11 @@ Beslissingsboom / barcode / AI → nog steeds geen resultaat
        ↓
 Contactformulier → admin queue
        ↓
-Admin onderzoekt → item toegevoegd aan database
+Admin onderzoekt in dashboard → item toegevoegd aan database
        ↓
 Gebruiker krijgt notificatie met correct antwoord
        ↓
 Alle toekomstige gebruikers vinden het item via laag 1
 ```
 
-Dit maakt de database zelf-verbeterend op basis van echte gebruikersvragen.
+Het admin dashboard maakt deze loop operationeel: escalaties verschijnen in de queue, worden daar opgelost (fractie toegekend), en de statistieken tonen welke queries het vaakst falen — precies de items die als eerste verrijkt moeten worden. Dit maakt de database zelf-verbeterend op basis van echte gebruikersvragen.
